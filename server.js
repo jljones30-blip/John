@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({server, maxPayload:2048});
 const rooms = new Map();
 const colors = ['#ff9843','#bb8bff','#69efb8','#ff83bc','#ffe27d','#78cfff','#e1b1ff','#b0dc64'];
-const hats=['none','witch','crown','bow','party'];
+const hats=['none','witch','crown','bow','party','pirate','top','horns','pumpkin','halo','wizard'];
 const characters=['ghost','spider','pumpkin','skeleton','witch','bat'];
 const rnd = (a,b) => a + Math.random() * (b-a);
 const active = r => [...r.players.values()].filter(p => !p.spectator);
@@ -18,31 +18,34 @@ function publicState(r) {
   return {phase:r.phase,host:r.host,holder:r.holder,round:r.round,countdown:Math.max(0,Math.ceil(r.countdown||0)),practice:!!r.practice,explosion:r.explosion,winner:r.winner,event:r.event,eventLeft:r.eventLeft,powerups:r.powerups,notice:r.notice,
     players:[...r.players.values()].map(({id,name,x,y,alive,color,spectator,wins,passes,speed,shield,character,hat,bot}) => ({id,name,x,y,alive,color,spectator,wins,passes,speed,shield,character,hat,bot}))};
 }
-function broadcast(r) { const data=JSON.stringify({type:'state',state:publicState(r)}); for(const p of r.players.values()) if(p.ws?.readyState===1)p.ws.send(data); }
+function broadcast(r) { const data=JSON.stringify({type:'state',state:publicState(r)}); for(const p of r.players.values()) if(p.ws?.readyState===1&&(p.ws.bufferedAmount||0)<65536)p.ws.send(data); }
 function fail(ws,message){ws.send(JSON.stringify({type:'error',message}));}
 function code(){let c;do{c=crypto.randomBytes(3).toString('hex').toUpperCase();}while(rooms.has(c));return c;}
 function finish(r){if(r.phase!=='playing')return;const survivors=living(r);if(survivors.length>1)return;r.phase='ended';r.holder=null;r.event=null;r.powerups=[];r.winner=survivors[0]?.name||'Nobody';if(survivors[0])survivors[0].wins++;r.notice=r.winner+' survived the haunted hollow!';}
-function spawn(r){if(r.powerups.length>=4)return;const type=['speed','shield','teleport'][Math.floor(Math.random()*3)];r.powerups.push({id:crypto.randomUUID(),type,x:rnd(55,745),y:rnd(55,425)});}
-function start(r){const players=active(r);if(players.length<2)return;r.phase='countdown';r.countdown=3;r.round++;r.winner='';r.fuse=rnd(8000,16000);r.holder=players[Math.floor(Math.random()*players.length)].id;r.cooldown=1.2;r.powerups=[];r.spawnIn=4;r.event=null;r.eventLeft=0;r.eventIn=7;r.notice='Get ready to HAUNT!';for(const p of r.players.values()){p.alive=!p.spectator;p.x=rnd(50,750);p.y=rnd(50,430);p.keys=[];p.speed=0;p.shield=0;}spawn(r);broadcast(r);}
+function spawn(r){if(r.powerups.length>=4)return;const edge=r.event==='shrink'?115:55;const type=['speed','shield','teleport'][Math.floor(Math.random()*3)];r.powerups.push({id:crypto.randomUUID(),type,x:rnd(edge,800-edge),y:rnd(edge,480-edge)});}
+function start(r){const players=active(r);if(players.length<2)return;r.phase='countdown';r.countdown=3;r.round++;r.explosion=null;r.winner='';r.fuse=rnd(8000,16000);r.holder=players[Math.floor(Math.random()*players.length)].id;r.cooldown=1.2;r.powerups=[];r.spawnIn=4;r.event=null;r.eventLeft=0;r.eventIn=7;r.notice='Get ready to HAUNT!';for(const p of r.players.values()){p.alive=!p.spectator;p.x=rnd(50,750);p.y=rnd(50,430);p.keys=[];p.inputAt=Date.now();p.target=null;p.speed=0;p.shield=0;}spawn(r);broadcast(r);}
 wss.on('connection',ws=>{
   let current=null;const id=crypto.randomUUID();
-  ws.on('message',raw=>{let m;try{m=JSON.parse(raw);}catch{return;}if(!m||typeof m!=='object')return;
+  ws.on('error',()=>{});
+  let messageWindow=Date.now(),messageCount=0;
+  ws.on('message',raw=>{if(Date.now()-messageWindow>1000){messageWindow=Date.now();messageCount=0;}if(++messageCount>100)return;handle(raw);});
+  function handle(raw){let m;try{m=JSON.parse(raw);}catch{return;}if(!m||typeof m!=='object')return;
     if(!current&&(m.type==='create'||m.type==='join')){
       let r;if(m.type==='create'){const c=code();r={code:c,players:new Map(),phase:'lobby',host:id,holder:null,round:0,winner:'',powerups:[],event:null,eventLeft:0,practice:m.practice===true,explosion:null,notice:'Gather your ghouls. Two players needed.'};rooms.set(c,r);}else r=rooms.get(String(m.room||'').trim().toUpperCase());
       if(!r)return fail(ws,'That room does not exist. Check the code.');
       if(r.players.size>=24)return fail(ws,'This room is full (24 guests).');
       const spectator=m.spectator===true||['playing','countdown'].includes(r.phase)||active(r).length>=8;
-      const p={id,ws,name:String(m.name||'Ghoul').replace(/[\x00-\x1f]/g,'').slice(0,14),x:rnd(50,750),y:rnd(50,430),alive:!spectator,spectator,character:characters.includes(m.character)?m.character:'ghost',bot:false,hat:'none',color:colors[active(r).length%8],keys:[],wins:0,passes:0,speed:0,shield:0};
+      const p={id,ws,name:String(m.name||'Ghoul').replace(/[\x00-\x1f]/g,'').trim().slice(0,14)||'Ghoul',x:rnd(50,750),y:rnd(50,430),alive:!spectator,spectator,character:characters.includes(m.character)?m.character:'ghost',bot:false,hat:'none',color:colors[active(r).length%8],keys:[],wins:0,passes:0,speed:0,shield:0};
       r.players.set(id,p);if(m.type==='create'&&r.practice){p.spectator=false;p.alive=true;for(let i=0;i<3;i++){const bid=crypto.randomUUID();r.players.set(bid,{id:bid,ws:null,name:['Webby Bot','Patch Bot','Bones Bot'][i],x:rnd(50,750),y:rnd(50,430),alive:true,spectator:false,character:['spider','pumpkin','skeleton'][i],bot:true,hat:['witch','crown','bow'][i],color:colors[i+1],keys:[],wins:0,passes:0,speed:0,shield:0});}}current=r;ws.send(JSON.stringify({type:'welcome',id,room:r.code}));broadcast(r);return;
     }
     if(!current)return;const p=current.players.get(id);if(!p)return;
     if(m.type==='start'&&current.host===id&&['lobby','ended'].includes(current.phase))start(current);
     if(m.type==='seat'&&['lobby','ended'].includes(current.phase)){
-      if(m.spectator===true){p.spectator=true;p.alive=false;}else if(active(current).length<8){p.spectator=false;p.alive=true;p.color=colors[active(current).length%8];}else return fail(ws,'All 8 player spots are taken.');broadcast(current);
+      if(m.spectator===true){p.spectator=true;p.alive=false;}else if(!p.spectator||active(current).length<8){p.spectator=false;p.alive=true;p.color=colors.find(c=>![...current.players.values()].some(q=>q.id!==p.id&&!q.spectator&&q.color===c))||colors[0];}else return fail(ws,'All 8 player spots are taken.');broadcast(current);
     }
     if(m.type==='customize'&&['lobby','ended'].includes(current.phase)){if(characters.includes(m.character))p.character=m.character;if(hats.includes(m.hat))p.hat=m.hat;broadcast(current);}
-    if(m.type==='input'&&current.phase==='playing'&&p.alive&&!p.spectator)p.keys=Array.isArray(m.keys)?m.keys.filter(k=>typeof k==='string').slice(0,8):[];
-  });
+    if(m.type==='input'&&current.phase==='playing'&&p.alive&&!p.spectator){p.keys=Array.isArray(m.keys)?m.keys.filter(k=>typeof k==='string').slice(0,8):[];p.inputAt=Date.now();}
+  }
   ws.on('close',()=>{if(!current)return;current.players.delete(id);if(current.host===id)current.host=[...current.players.values()].find(p=>!p.bot&&!p.spectator)?.id||[...current.players.values()].find(p=>!p.bot)?.id||null;if(current.holder===id){current.holder=living(current)[0]?.id||null;current.cooldown=1.2;}if(![...current.players.values()].some(p=>!p.bot))rooms.delete(current.code);else{if(current.phase==='countdown'&&active(current).length<2)current.phase='lobby';finish(current);broadcast(current);}});
 });
 let prev=Date.now();
@@ -55,10 +58,11 @@ function tick(){const now=Date.now(),dt=Math.min((now-prev)/1000,.1);prev=now;
     if(r.eventLeft>0){r.eventLeft-=dt;if(r.eventLeft<=0){r.event=null;r.notice='The curse has lifted.';}}
     if(r.eventIn<=0){r.event=['fog','rush','shrink'][Math.floor(Math.random()*3)];r.eventLeft=6;r.eventIn=13;r.notice={fog:'Ghost fog! Watch the glowing outlines.',rush:'Witching hour! Everyone moves faster.',shrink:'Closing gates! The hollow is shrinking.'}[r.event];}
     const alive=living(r),edge=r.event==='shrink'?90:22;
-    for(const p of alive){p.speed=Math.max(0,p.speed-dt);p.shield=Math.max(0,p.shield-dt);if(p.bot){const holder=r.players.get(r.holder);let target;if(holder?.id===p.id)target=alive.filter(q=>q.id!==p.id&&q.shield<=0).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];else if(holder&&Math.hypot(holder.x-p.x,holder.y-p.y)<240)target={x:p.x+(p.x-holder.x||50)*2,y:p.y+(p.y-holder.y||50)*2};else{if(!p.target||Math.hypot(p.target.x-p.x,p.target.y-p.y)<35)p.target={x:rnd(edge,800-edge),y:rnd(edge,480-edge)};target=p.target;}p.keys=[];if(target){if(target.x>p.x+5)p.keys.push('d');if(target.x<p.x-5)p.keys.push('a');if(target.y>p.y+5)p.keys.push('s');if(target.y<p.y-5)p.keys.push('w');}}const k=p.keys;
+    for(const item of r.powerups){item.x=Math.max(edge+20,Math.min(780-edge,item.x));item.y=Math.max(edge+20,Math.min(460-edge,item.y));}
+    for(const p of alive){if(!p.bot&&now-(p.inputAt||0)>750)p.keys=[];p.speed=Math.max(0,p.speed-dt);p.shield=Math.max(0,p.shield-dt);if(p.bot){const holder=r.players.get(r.holder);let target;if(holder?.id===p.id)target=alive.filter(q=>q.id!==p.id&&q.shield<=0).sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y))[0];else if(holder&&Math.hypot(holder.x-p.x,holder.y-p.y)<240){const options=[{x:edge+35,y:edge+35},{x:765-edge,y:edge+35},{x:edge+35,y:445-edge},{x:765-edge,y:445-edge}];target=options.sort((a,b)=>(Math.hypot(b.x-holder.x,b.y-holder.y)-.4*Math.hypot(b.x-p.x,b.y-p.y))-(Math.hypot(a.x-holder.x,a.y-holder.y)-.4*Math.hypot(a.x-p.x,a.y-p.y)))[0];}else{if(!p.target||Math.hypot(p.target.x-p.x,p.target.y-p.y)<35)p.target={x:rnd(edge,800-edge),y:rnd(edge,480-edge)};target=p.target;}p.keys=[];if(target){target.x=Math.max(edge+10,Math.min(790-edge,target.x));target.y=Math.max(edge+10,Math.min(470-edge,target.y));if(target.x>p.x+5)p.keys.push('d');if(target.x<p.x-5)p.keys.push('a');if(target.y>p.y+5)p.keys.push('s');if(target.y<p.y-5)p.keys.push('w');}}const k=p.keys;
       const dx=Number(k.includes('d')||k.includes('D')||k.includes('ArrowRight'))-Number(k.includes('a')||k.includes('A')||k.includes('ArrowLeft'));
       const dy=Number(k.includes('s')||k.includes('S')||k.includes('ArrowDown'))-Number(k.includes('w')||k.includes('W')||k.includes('ArrowUp'));
-      const length=Math.hypot(dx,dy)||1,speed=185*(p.speed>0?1.6:1)*(r.event==='rush'?1.35:1);
+      const length=Math.hypot(dx,dy)||1,speed=185*(p.id===r.holder?1.08:1)*(p.speed>0?1.6:1)*(r.event==='rush'?1.35:1);
       p.x=Math.max(edge,Math.min(800-edge,p.x+dx/length*speed*dt));p.y=Math.max(edge,Math.min(480-edge,p.y+dy/length*speed*dt));
       const pickup=r.powerups.find(item=>Math.hypot(p.x-item.x,p.y-item.y)<33);
       if(pickup){r.powerups=r.powerups.filter(item=>item.id!==pickup.id);if(pickup.type==='speed')p.speed=5;if(pickup.type==='shield')p.shield=5;if(pickup.type==='teleport'){p.x=rnd(edge+20,780-edge);p.y=rnd(edge+20,460-edge);}r.notice=p.name+' picked up '+pickup.type+'!';}

@@ -15,3 +15,5 @@ Late joiners watch the current match. Eliminated players also spectate. Between 
 Deploy as a single Node web service: build `npm install`, start `npm start`. Health check: /health. Active rooms and scores live in memory; restarting the server or leaving a room resets that state. Use one server instance.
 
 Join first, then choose a character and hat in the lobby. Cosmetics lock during countdown/play. Test room creates three server-controlled bots. Every match has a synchronized three-second countdown. Eliminations emit a victim-specific jumpscare; the visitor can disable it, and reduced-motion preferences disable it by default.
+
+Polish update: six extra hats (pirate, top hat, horns, pumpkin cap, halo, wizard); look/name/scare preferences saved locally; input refreshed every 100ms and stopped server-side after 750ms without input; bomb label placed beside the character; bomb holder gets an 8% chase speed advantage; scoreboard rerenders only when its contents change.
