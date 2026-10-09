@@ -17,3 +17,5 @@ Deploy as a single Node web service: build `npm install`, start `npm start`. Hea
 Join first, then choose a character and hat in the lobby. Cosmetics lock during countdown/play. Test room creates three server-controlled bots. Every match has a synchronized three-second countdown. Eliminations emit a victim-specific jumpscare; the visitor can disable it, and reduced-motion preferences disable it by default.
 
 Polish update: six extra hats (pirate, top hat, horns, pumpkin cap, halo, wizard); look/name/scare preferences saved locally; input refreshed every 100ms and stopped server-side after 750ms without input; bomb label placed beside the character; bomb holder gets an 8% chase speed advantage; scoreboard rerenders only when its contents change.
+
+Three maps are selected randomly each match: Haunted Cemetery (tombstones), Wicked Forest (trees and river with two bridges), and Pumpkin Patch Panic (hay bales and giant pumpkins). Server-side collision and line-of-sight rules block running/tagging through obstacles. Bots use map paths, and spawns, teleportation and pickups use valid positions. Shrinking bounds preserve connected routes on all three maps.
